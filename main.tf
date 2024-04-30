@@ -1,117 +1,88 @@
-terraform {
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = ">= 5.1"
-    }
-  }
-  required_version = ">= 1.2.0"
-}
-
 provider "aws" {
   region = "us-east-1"
 }
-# Define VPC
-resource "aws_vpc" "my_vpc" {
-  cidr_block           = "10.0.0.0/16"
-  enable_dns_support   = true
-  enable_dns_hostnames = true
 
-  tags = {
-    Name = "my-vpc"
-  }
-}
+resource "aws_security_group" "allow_ssh_http" {
+  name_prefix = "allow_ssh_http"
 
-# Define Internet Gateway
-resource "aws_internet_gateway" "my_igw" {
-  vpc_id = aws_vpc.my_vpc.id
-
-  tags = {
-    Name = "my-igw"
-  }
-}
-
-# Define Public Subnet
-resource "aws_subnet" "public_subnet" {
-  vpc_id            = aws_vpc.my_vpc.id
-  cidr_block        = "10.0.1.0/24"
-  availability_zone = "us-east-1a"
-  tags = {
-    Name = "public-subnet"
-  }
-}
-
-# Define Security Group
-resource "aws_security_group" "my_security_group" {
-  name        = "my-security-group"
-  description = "Security group for Tic Tac Toe game"
-
-  vpc_id = aws_vpc.my_vpc.id
-
-
-    ingress {
-    from_port   = 22
-    to_port     = 22
+  ingress {
+    from_port   = 80
+    to_port     = 80
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
-  
-  ingress {
+
+ingress {
     from_port   = 8080
     to_port     = 8080
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  ingress {
+ingress {
     from_port   = 8081
     to_port     = 8081
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  # Define egress rules
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
   egress {
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
-
-  tags = {
-    Name = "my-security-group"
-  }
 }
 
-
-
-# Define ECR Repository
-resource "aws_ecr_repository" "my_repository_back" {
-  name = "339713018133.dkr.ecr.us-east-1.amazonaws.com/tic_tac_toe_back"
-}
-
-resource "aws_ecr_repository" "my_repository_front" {
-  name = "339713018133.dkr.ecr.us-east-1.amazonaws.com/tic_tac_toe_front"
-}
-
-
-# Define EC2 Instance
-resource "aws_instance" "tic_tac_toe_instance" {
-  ami           = "ami-080e1f13689e07408"
+resource "aws_instance" "tic_tac_toe" {
+  ami           = "ami-006dcf34c09e50022" // Amazon Linux 2 AMI
   instance_type = "t2.micro"
   key_name      = "vockey"
-  subnet_id     = aws_subnet.public_subnet.id
-  associate_public_ip_address = "true"
-  vpc_security_group_ids = [aws_security_group.my_security_group.id]
-
+  vpc_security_group_ids = [
+    aws_security_group.allow_ssh_http.id,
+  ]
   user_data = <<-EOF
-              # Additional setup for your Tic Tac Toe game
-              docker pull ${aws_ecr_repository.my_repository_back.name}:v1
-              docker pull ${aws_ecr_repository.my_repository_front.name}:v1
-              docker run -d -p 8081:3000 ${aws_ecr_repository.my_repository_front.name}:v1
-              docker run -d -p 8080:8080 ${aws_ecr_repository.my_repository_back.name}:v1
+              #!/bin/bash
+
+              sudo yum install -y docker git python3
+              sudo systemctl enable docker
+              sudo systemctl start docker
+              sudo chown $USER /var/run/docker.sock
+              sudo curl -L https://github.com/docker/compose/releases/download/1.29.2/docker-compose-$(uname -s)-$(uname -m) -o /usr/local/bin/docker-compose
+              sudo chmod +x /usr/local/bin/docker-compose
+              sudo ln -s /usr/local/bin/docker-compose /usr/bin/docker-compose
+              git clone https://github.com/pwr-cloudprogramming/a5-lauraSeatovic.git
+              cd cloudTest
+              PUBLIC_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)
+              echo $PUBLIC_IP > ip.txt
+              echo "PUBLIC_IP=$PUBLIC_IP" > .env
+              sudo docker-compose up -d
+
               EOF
+
+
+
   tags = {
-    Name = "tic-tac-toe-instance" # Change this to a meaningful name for your instance
-  }
+    Name = "Tic-Tac-Toe"
+    }
+
+
+}
+
+output "public_ip" {
+  value = aws_instance.tic_tac_toe.public_ip
 }
